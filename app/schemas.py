@@ -4,11 +4,14 @@ from typing import Optional
 
 class UserCreate(BaseModel):
     email: EmailStr
+    user_name: str
     password: str
+    bolha_password: str
 
 class UserOut(BaseModel):
     id: int
     email: EmailStr
+    user_name: str
     created_at: datetime
 
     class Config:
@@ -27,7 +30,7 @@ class AdBase(BaseModel):
     content: str
     category: str
     price: Optional[float] = None
-    phone: Optional[int] = None 
+    phone: Optional[str] = None 
 
 class AdCreate(AdBase):
     pass
@@ -36,19 +39,22 @@ class AdUpdate(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
     price: Optional[float] = None
-    phone: Optional[int] = None 
+    phone: Optional[str] = None 
 
 class Ad(AdBase):
     id: int
     created_at: datetime
+    published_at: datetime
+    bolha_id: str
 
     class Config:
         orm_mode = True
 
 class AdWithPublished(Ad):
-    published_at: Optional[datetime] = None
     user: UserOut
 
+class AdWithPosition(AdWithPublished):
+    position: int
 
 class Token(BaseModel):
     access_token: str

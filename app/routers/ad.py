@@ -4,6 +4,8 @@ from ..database import get_db
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import json
+from ..scraper import scraper
+from ..scraper import schemas as sc
 
 router = APIRouter(prefix="/ads", tags=["ads"])
 
@@ -15,7 +17,7 @@ def get_all_ads(db: Session = Depends(get_db), current_user = Depends(oauth2.get
     return ads
 
 
-@router.get("/{id}", response_model=schemas.AdWithPublished)
+@router.get("/{id}", response_model=schemas.AdWithPosition)
 def get_ad_by_id(id: int, db: Session = Depends(get_db), current_user = Depends(oauth2.get_current_user)):
     #cursor.execute("""SELECT * FROM ads WHERE id = %s""", (str(id)))
     #ad = cursor.fetchone()
@@ -24,7 +26,10 @@ def get_ad_by_id(id: int, db: Session = Depends(get_db), current_user = Depends(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"ad with id: {id} was not found")
     if ad.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to perform requested action")
-    return ad
+    position = scraper.position(ad.bolha_id, current_user)
+    response_ad = schemas.AdWithPosition(position = position, **ad.__dict__, user = current_user)
+    return response_ad
+
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=schemas.Ad)
@@ -44,7 +49,10 @@ def post_ad(ad: schemas.AdCreate, db: Session = Depends(get_db), current_user = 
     #cursor.execute("""INSERT INTO ads (title, content, price, category) VALUES (%s, %s, %s, %s) RETURNING *""", (ad.title, ad.content, ad.price, ad.category))
     #new_ad = cursor.fetchone()
     #conn.commit()
-    new_ad = models.Ad(user_id = current_user.id, **ad.dict())
+
+    bolha_id = scraper.add_ad(ad, current_user)
+
+    new_ad = models.Ad(bolha_id = bolha_id, user_id = current_user.id, **ad.dict())
     db.add(new_ad)
     db.commit()
     db.refresh(new_ad)
@@ -66,6 +74,8 @@ def delete_ad(id: int, db: Session = Depends(get_db), current_user = Depends(oau
     if ad.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to perform requested action")
 
+    scraper.remove(ad.bolha_id, current_user)
+
     ad_query.delete(synchronize_session=False)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -75,15 +85,6 @@ def delete_ad(id: int, db: Session = Depends(get_db), current_user = Depends(oau
 def update_ad(new_ad: schemas.AdUpdate, id: int, db: Session = Depends(get_db), current_user = Depends(oauth2.get_current_user)):
     new_ad_dict = new_ad.dict()
     
-    if new_ad_dict['title'] == None:
-        new_ad_dict.pop('title', None)
-    if new_ad_dict['content'] == None:
-        new_ad_dict.pop('content', None)
-    if new_ad_dict['price'] == None:
-        new_ad_dict.pop('price', None)
-    if new_ad_dict['phone'] == None:
-        new_ad_dict.pop('phone', None)
-    
     #cursor.execute("""UPDATE ads SET title=%s, content=%s, price=%s where id=%s RETURNING *""", (new_ad_dict['title'], new_ad_dict['content'], new_ad_dict['price'], id))
     #updated_ad = cursor.fetchone()
     #conn.commit()
@@ -92,9 +93,29 @@ def update_ad(new_ad: schemas.AdUpdate, id: int, db: Session = Depends(get_db), 
     if ad_query.first() == None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"ad with id: {id} not found")
     
-    if ad_query.first().user_id != current_user.id:
+    ad = ad_query.first()
+    if ad.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to perform requested action")
     
+    if new_ad_dict['title'] == None:
+        new_ad_dict['title'] = ad.title
+    if new_ad_dict['content'] == None:
+        new_ad_dict['content'] = ad.content
+    if new_ad_dict['price'] == None:
+        new_ad_dict['price'] = ad.price
+    if new_ad_dict['phone'] == None:
+        new_ad_dict['phone'] = ad.phone
+    new_ad_dict['category'] = ad.category
+
+    scraper.remove(ad.bolha_id, current_user)
+    new_ad_dict['bolha_id'] = scraper.add_ad(sc.Ad(**new_ad_dict), current_user)
+
+
     ad_query.update(new_ad_dict, synchronize_session=False)
     db.commit()
-    return ad_query.first()
+
+    ad = ad_query.first()
+    
+    response_ad = schemas.Ad(**ad.__dict__, user = current_user)
+
+    return response_ad

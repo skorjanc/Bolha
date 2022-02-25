@@ -1,8 +1,9 @@
-from fastapi import Response, status, HTTPException, Depends, APIRouter
+from fastapi import status, HTTPException, Depends, APIRouter
 from .. import models, schemas, utils
 from ..database import get_db
 from sqlalchemy.orm import Session
 from typing import List
+from ..encryption import encrypt
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -10,6 +11,8 @@ router = APIRouter(prefix="/users", tags=["users"])
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     hashed_password = utils.hash(user.password)
     user.password = hashed_password
+    encrypted_password = encrypt(user.bolha_password)
+    user.bolha_password = encrypted_password
     new_user = models.User(**user.dict())
     db.add(new_user)
     db.commit()
